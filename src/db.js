@@ -121,6 +121,7 @@ export async function getDiscussions(chapterId) {
   return ds.sort(function (a, b) { return a.createdAt - b.createdAt; });
 }
 export async function addDiscussion(d) { return add("discussions", d); }
+export async function deleteDiscussion(id) { return del("discussions", id); }
 
 /* ---- Settings ---- */
 export async function getSetting(key) {
@@ -138,7 +139,7 @@ export async function callAI(settings, messages, featureModelKey) {
   var res = await fetch(settings.apiUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json", "Authorization": "Bearer " + settings.apiKey },
-    body: JSON.stringify({ model: model, messages: messages, max_tokens: 4000 }),
+    body: JSON.stringify({ model: model, messages: messages, max_tokens: settings.maxOutputTokens||2000 }),
   });
   if (!res.ok) {
     var errText = await res.text();
@@ -155,31 +156,41 @@ export async function callAI(settings, messages, featureModelKey) {
 export function parseTxt(text, filename) {
   var title = filename.replace(/\.txt$/i, "");
   var lines = text.split("\n");
-  /* 只匹配 第X章/回/篇 + Chapter X，不匹配 第X节（小节级别） */
-  var chPat = /^(第[一二三四五六七八九十百千零\d]+[章回篇]|Chapter\s+\d+|CHAPTER\s+[IVXLCDM\d]+)/i;
-  /* Find chapter heading line indices */
+  /* 宽松匹配：第__章/回/篇/部（中间任意1-10字符）+ 英文章节 */
+  var chPat = /^(第.{1,10}[章回篇部]|Chapter\s+[\s\S]{1,20}|Part\s+[\dIVXLCDM]+|Section\s+[A-Z\d]+|Passage\s+\d+|Text\s+\d+|Directions\s*:)/i;
   var starts = [];
   lines.forEach(function(line, idx) {
     var trimmed = line.trim();
-    /* 真正的章标题不会超过60字 */
-    if (chPat.test(trimmed) && trimmed.length <= 60) starts.push(idx);
+    if (chPat.test(trimmed) && trimmed.length <= 80) starts.push(idx);
   });
   var chapters = [];
-  if (starts.length > 1) {
+  if (starts.length >= 2) {
+    if (starts[0] > 0) {
+      var pre = lines.slice(0, starts[0]).join("\n").trim();
+      if (pre && pre.length > 20) chapters.push({ title: "\u524D\u8A00", content: pre });
+    }
     for (var i = 0; i < starts.length; i++) {
       var si = starts[i];
       var ei = i < starts.length - 1 ? starts[i + 1] : lines.length;
       var block = lines.slice(si, ei).join("\n").trim();
       if (block) chapters.push({ title: lines[si].trim().substring(0, 50), content: block });
     }
-    /* If there's content before first chapter heading, prepend as chapter 0 */
-    if (starts[0] > 0) {
-      var pre = lines.slice(0, starts[0]).join("\n").trim();
-      if (pre) chapters.unshift({ title: "\u524D\u8A00", content: pre });
-    }
     return { title: title, chapters: chapters };
   }
-  /* Fallback: split by double newlines into ~2000 char chunks */
+  /* Fallback 2: 4+空行分章 */
+  var bigGapParts = text.split(/\n{4,}/);
+  if (bigGapParts.length >= 2) {
+    var validParts = bigGapParts.filter(function(s){ return s.trim() && s.trim().length > 50; });
+    if (validParts.length >= 2) {
+      for (var g = 0; g < validParts.length; g++) {
+        var partText = validParts[g].trim();
+        var firstLine = partText.split("\n")[0].trim().substring(0, 50);
+        chapters.push({ title: firstLine.length < 60 ? firstLine : "\u7B2C" + (g+1) + "\u7AE0", content: partText });
+      }
+      return { title: title, chapters: chapters };
+    }
+  }
+  /* Fallback 3: split by double newlines into ~2000 char chunks */
   var paras = text.split(/\n\s*\n/).filter(function (s) { return s.trim(); });
   if (paras.length <= 1) { chapters.push({ title: "\u7B2C1\u7AE0", content: text }); }
   else {
@@ -209,21 +220,29 @@ export function parseHtml(html, filename) {
   return { title: title, chapters: chapters };
 }
 
-/* ---- 智能分段合并 ---- */
-/* 把太短的段落（标题、错误回车）合并到相邻段落 */
-export function mergeShortParagraphs(paragraphs) {
-  if (paragraphs.length <= 1) return paragraphs;
+/* ---- 智能分段 ---- */
+/* 1. 先按双换行分段；如果只有1-2段，改用单换行分段
+   2. 合并太短的行（标题、错误回车）到相邻段落 */
+export function smartSplitParagraphs(content) {
+  if (!content || !content.trim()) return [];
+  /* 先试双换行 */
+  var paras = content.split(/\n\s*\n/).map(function(s){return s.trim();}).filter(function(s){return s;});
+  /* 如果只分出1-2段但内容很长，换成单换行分段 */
+  if (paras.length <= 2 && content.length > 500) {
+    paras = content.split(/\n/).map(function(s){return s.trim();}).filter(function(s){return s;});
+  }
+  if (paras.length <= 1) return paras;
+  /* 合并短行 */
   var endPunc = /[。！？.!?\u2026\u201D\u300D)）】」》]$/;
   var result = [];
   var buf = "";
-  for (var i = 0; i < paragraphs.length; i++) {
-    var p = paragraphs[i].trim();
-    if (!p) continue;
+  for (var i = 0; i < paras.length; i++) {
+    var p = paras[i];
     if (buf) {
       p = buf + "\n" + p;
       buf = "";
     }
-    if (p.length < 20 && !endPunc.test(p) && i < paragraphs.length - 1) {
+    if (p.length < 40 && !endPunc.test(p) && i < paras.length - 1) {
       buf = p;
     } else {
       result.push(p);
@@ -238,15 +257,32 @@ export function mergeShortParagraphs(paragraphs) {
   }
   return result;
 }
+/* 保留旧名兼容 */
+export var mergeShortParagraphs = smartSplitParagraphs;
 
 /* ---- Export/Import ---- */
 export async function exportData() {
-  var books = await getAllBooks(); var allChapters = [];
-  for (var i = 0; i < books.length; i++) { var chs = await getChaptersByBook(books[i].id); allChapters = allChapters.concat(chs); }
-  return JSON.stringify({ books: books, chapters: allChapters });
+  var books = await getAllBooks(); var allChapters = []; var allHL = []; var allNotes = []; var allDisc = []; var allAI = [];
+  for (var i = 0; i < books.length; i++) {
+    var chs = await getChaptersByBook(books[i].id); allChapters = allChapters.concat(chs);
+    for (var j = 0; j < chs.length; j++) {
+      var hl = await getHighlights(chs[j].id); allHL = allHL.concat(hl);
+      var notes = await getUserNotes(chs[j].id); allNotes = allNotes.concat(notes);
+      var disc = await getDiscussions(chs[j].id); allDisc = allDisc.concat(disc);
+      var s1 = await getAiCache("story-" + chs[j].id); if (s1) allAI.push(s1);
+      var s2 = await getAiCache("ann-" + chs[j].id); if (s2) allAI.push(s2);
+    }
+  }
+  var settings = await getSetting("userSettings");
+  return JSON.stringify({ books: books, chapters: allChapters, highlights: allHL, userNotes: allNotes, discussions: allDisc, aiCache: allAI, settings: settings });
 }
 export async function importData(jsonStr) {
   var data = JSON.parse(jsonStr);
-  for (var i = 0; i < data.books.length; i++) await put("books", data.books[i]);
-  for (var j = 0; j < data.chapters.length; j++) await put("chapters", data.chapters[j]);
+  if (data.books) for (var i = 0; i < data.books.length; i++) await put("books", data.books[i]);
+  if (data.chapters) for (var j = 0; j < data.chapters.length; j++) await put("chapters", data.chapters[j]);
+  if (data.highlights) for (var k = 0; k < data.highlights.length; k++) await put("highlights", data.highlights[k]);
+  if (data.userNotes) for (var l = 0; l < data.userNotes.length; l++) await put("userNotes", data.userNotes[l]);
+  if (data.discussions) for (var m = 0; m < data.discussions.length; m++) await put("discussions", data.discussions[m]);
+  if (data.aiCache) for (var n = 0; n < data.aiCache.length; n++) await put("aiCache", data.aiCache[n]);
+  if (data.settings) await put("settings", { key: "userSettings", value: data.settings });
 }

@@ -1,19 +1,19 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { themes, bubblePresets, highlightColors, defaultSettings } from "./theme";
+import { themes, bubblePresets, highlightColors, defaultSettings, fontPresets } from "./theme";
 import {
   getAllBooks, addBook, updateBook, deleteBook,
   getChaptersByBook, addChapter, updateChapter,
   getSetting, setSetting,
-  parseTxt, parseHtml, mergeShortParagraphs, exportData, importData,
+  parseTxt, parseHtml, smartSplitParagraphs, exportData, importData,
   callAI, getAiCache, setAiCache,
   getHighlights, addHighlight, deleteHighlight,
   getUserNotes, addUserNote, updateUserNote, deleteUserNote,
-  getDiscussions, addDiscussion,
+  getDiscussions, addDiscussion, deleteDiscussion,
 } from "./db";
 
 /* ===== Glass Card ===== */
 function G(p) {
-  return (<div onClick={p.onClick} style={Object.assign({ background:"rgba(255,255,255,0.70)", backdropFilter:"blur(24px)", WebkitBackdropFilter:"blur(24px)", borderRadius:18, border:"1px solid rgba(255,255,255,0.8)", boxShadow:"0 2px 16px rgba(0,0,0,0.04), inset 0 0.5px 0 rgba(255,255,255,0.9)" }, p.s||{})}>{p.children}</div>);
+  return (<div onClick={p.onClick} style={Object.assign({ background:"var(--card-bg, rgba(255,255,255,0.70))", backdropFilter:"blur(24px)", WebkitBackdropFilter:"blur(24px)", borderRadius:18, border:"var(--card-border, 1px solid rgba(255,255,255,0.8))", boxShadow:"var(--card-shadow, 0 2px 16px rgba(0,0,0,0.04))" }, p.s||{})}>{p.children}</div>);
 }
 
 /* ===== Render text with highlights ===== */
@@ -102,6 +102,35 @@ function ShelfPage(p) {
 function ChaptersPage(p) {
   var t=p.t; var bk=p.book; var chs=p.chapters; var ci=(bk.colorIndex||0)%3;
   var rc=chs.filter(function(c){return c.isRead;}).length;
+  var _editId=useState(null); var editId=_editId[0]; var setEditId=_editId[1];
+  var _editText=useState(""); var editText=_editText[0]; var setEditText=_editText[1];
+  var _editTitle=useState(""); var editTitle=_editTitle[0]; var setEditTitle=_editTitle[1];
+
+  function startEdit(c,e) { e.stopPropagation(); setEditId(c.id); setEditText(c.content); setEditTitle(c.title); }
+  async function saveEdit() {
+    var ch=chs.find(function(c){return c.id===editId;});
+    if(ch) { ch.content=editText; ch.title=editTitle; await p.onUpdateChapter(ch); }
+    setEditId(null);
+  }
+
+  if(editId!==null) {
+    return (
+      <div>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 0 8px"}}>
+          <div onClick={function(){setEditId(null);}} style={{width:34,height:34,borderRadius:11,background:t.solid,border:"1px solid "+t.borderSub,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,cursor:"pointer",color:t.sub}}>{"\u2190"}</div>
+          <div style={{fontSize:14,fontWeight:600,color:t.text}}>{"\u7F16\u8F91\u7AE0\u8282"}</div>
+          <div onClick={saveEdit} style={{padding:"6px 14px",borderRadius:10,background:t.accent,color:"#fff",fontSize:12,fontWeight:600,cursor:"pointer"}}>{"\u4FDD\u5B58"}</div>
+        </div>
+        <G s={{padding:16,marginBottom:12}}>
+          <div style={{fontSize:12,color:t.sub,marginBottom:4}}>{"\u7AE0\u8282\u6807\u9898"}</div>
+          <input value={editTitle} onChange={function(e){setEditTitle(e.target.value);}} style={{width:"100%",padding:"8px 12px",borderRadius:10,background:"rgba(0,0,0,0.02)",border:"1px solid rgba(0,0,0,0.06)",fontSize:14,color:t.text,outline:"none",fontFamily:"inherit",marginBottom:12,boxSizing:"border-box"}}/>
+          <div style={{fontSize:12,color:t.sub,marginBottom:4}}>{"\u7AE0\u8282\u5185\u5BB9\uFF08\u7A7A\u884C\u5206\u6BB5\uFF09"}</div>
+          <textarea value={editText} onChange={function(e){setEditText(e.target.value);}} style={{width:"100%",minHeight:"60vh",padding:"12px 14px",borderRadius:12,background:"rgba(0,0,0,0.02)",border:"1px solid rgba(0,0,0,0.06)",fontSize:14,lineHeight:1.8,color:t.text,outline:"none",resize:"vertical",fontFamily:"inherit",boxSizing:"border-box"}}/>
+        </G>
+      </div>
+    );
+  }
+
   return (
     <div>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 0 8px"}}>
@@ -119,9 +148,10 @@ function ChaptersPage(p) {
       </G>
       <G s={{padding:4}}>
         {chs.map(function(c,i){
-          return (<div key={c.id} onClick={function(){p.onOpenChapter(c.id);}} style={{display:"flex",alignItems:"center",gap:12,padding:"14px",cursor:"pointer",borderBottom:i<chs.length-1?"1px solid rgba(0,0,0,0.04)":"none"}}>
+          return (<div key={c.id} style={{display:"flex",alignItems:"center",gap:12,padding:"14px",borderBottom:i<chs.length-1?"1px solid rgba(0,0,0,0.04)":"none"}}>
             <div style={{width:8,height:8,borderRadius:4,flexShrink:0,background:c.isRead?t.fresh:"rgba(0,0,0,0.08)"}}/>
-            <div style={{flex:1,fontSize:14,fontWeight:500,color:c.isRead?t.sub:t.text}}>{"\u7B2C"+c.number+"\u7AE0\u3000"+c.title}</div>
+            <div onClick={function(){p.onOpenChapter(c.id);}} style={{flex:1,fontSize:14,fontWeight:500,color:c.isRead?t.sub:t.text,cursor:"pointer"}}>{"\u7B2C"+c.number+"\u7AE0\u3000"+c.title}</div>
+            <div onClick={function(e){startEdit(c,e);}} style={{width:28,height:28,borderRadius:8,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,cursor:"pointer",color:t.sub,opacity:0.4}}>{"\u270F\uFE0F"}</div>
             {c.isRead?<span style={{fontSize:11,color:t.fresh,fontWeight:600}}>{"\u2713"}</span>:<span style={{fontSize:14,color:"#ddd"}}>{"\u203A"}</span>}
           </div>);
         })}
@@ -154,7 +184,6 @@ function ReaderPage(p) {
   var _aiAnnLoading=useState(false); var aiAnnLoading=_aiAnnLoading[0]; var setAiAnnLoading=_aiAnnLoading[1];
   // User highlights
   var _hls=useState([]); var hls=_hls[0]; var setHls=_hls[1];
-  var _hlMenu=useState(null); var hlMenu=_hlMenu[0]; var setHlMenu=_hlMenu[1];
   // User notes
   var _notes=useState([]); var notes=_notes[0]; var setNotes=_notes[1];
   var _noteOpen=useState({}); var noteOpen=_noteOpen[0]; var setNoteOpen=_noteOpen[1];
@@ -166,26 +195,39 @@ function ReaderPage(p) {
   // Pagination
   var _pg=useState(0); var curPage=_pg[0]; var setCurPage=_pg[1];
 
-  var bp=bubblePresets[settings.bubbleIndex||1];
+  var bp=bubblePresets[settings.bubbleIndex!=null?settings.bubbleIndex:1];
   var ci=allChs.findIndex(function(c){return c.id===ch.id;});
   var hasPrev=ci>0; var hasNext=ci<allChs.length-1;
-  var allParagraphs=ch.content?mergeShortParagraphs(ch.content.split(/\n\s*\n/).filter(function(s){return s.trim();})):[];
-  var ppp=settings.parasPerPage||8;
-  var totalPages=Math.max(1,Math.ceil(allParagraphs.length/ppp));
-  var paragraphs=allParagraphs.slice(curPage*ppp,(curPage+1)*ppp);
-  var paraOffset=curPage*ppp; // offset for highlight/note indices
+  var allParagraphs=smartSplitParagraphs(ch.content||"");
+  var isScrollMode=settings.scrollMode;
+  var charsPerPage=settings.charsPerPage||3000;
+  /* 按字数分页：累加段落字数，超过阈值则分页 */
+  var pageBreaks=[0]; // 每页起始段落索引
+  if(!isScrollMode){
+    var charCount=0;
+    for(var _pi=0;_pi<allParagraphs.length;_pi++){
+      charCount+=allParagraphs[_pi].length;
+      if(charCount>=charsPerPage&&_pi<allParagraphs.length-1){ pageBreaks.push(_pi+1); charCount=0; }
+    }
+  }
+  var totalPages=isScrollMode?1:pageBreaks.length;
+  var pageStart=isScrollMode?0:(pageBreaks[curPage]||0);
+  var pageEnd=isScrollMode?allParagraphs.length:(pageBreaks[curPage+1]||allParagraphs.length);
+  var paragraphs=allParagraphs.slice(pageStart,pageEnd);
+  var paraOffset=pageStart;
+  var fp=fontPresets[settings.fontIndex||0]||fontPresets[0];
 
   /* Load chapter data */
   useEffect(function(){
     setAO({}); setAllAiOn(false); setAiStory(null); setAiAnn(null); setAnnOpen(false);
-    setChatOn(false); setMsgs([]); setNoteOpen({}); setNoteEdit({}); setHlMenu(null); setErr(""); setCurPage(0);
+    setChatOn(false); setMsgs([]); setNoteOpen({}); setNoteEdit({}); setErr(""); setCurPage(0); setHlMode(false);
     (async function(){
       var hl=await getHighlights(ch.id); setHls(hl);
       var un=await getUserNotes(ch.id); setNotes(un);
       var cached=await getAiCache("story-"+ch.id); if(cached) setAiStory(cached.data);
       var cachedAnn=await getAiCache("ann-"+ch.id); if(cachedAnn) setAiAnn(cachedAnn.data);
       var disc=await getDiscussions(ch.id);
-      if(disc.length>0) setMsgs(disc.map(function(d){return{role:d.author,text:d.content};}));
+      if(disc.length>0) setMsgs(disc.map(function(d){return{role:d.author,text:d.content,id:d.id};}));
     })();
   },[ch.id]);
 
@@ -235,7 +277,7 @@ function ReaderPage(p) {
     setAiAnnLoading(false);
   }
 
-  /* ---- 讨论/聊天 (real API, 带AI讲解和批注上下文) ---- */
+  /* ---- 讨论/聊天 ---- */
   async function send() {
     if(!inp.trim()||sending) return;
     var userText=inp; setInp(""); setSending(true); setErr("");
@@ -243,14 +285,25 @@ function ReaderPage(p) {
     setMsgs(newMsgs);
     await addDiscussion({chapterId:ch.id, author:"user", content:userText, createdAt:Date.now()});
     try {
-      var ctx=chatP!==null?"\n\n\u5F53\u524D\u8BA8\u8BBA\u7684\u6BB5\u843D\uFF08\u7B2C"+(chatP+1)+"\u6BB5\uFF09\uFF1A\n"+allParagraphs[chatP]:"";
-      /* 带入AI讲解和批注作为上下文 */
-      if(chatP!==null&&aiStory&&aiStory[chatP]) ctx+="\n\nAI\u5BF9\u8FD9\u6BB5\u7684\u8BB2\u89E3\uFF1A\n"+aiStory[chatP];
-      if(chatP!==null&&aiAnn&&aiAnn[chatP]) ctx+="\n\nAI\u5BF9\u8FD9\u6BB5\u7684\u6279\u6CE8\uFF1A\n"+aiAnn[chatP];
-      var sysMsg={role:"system",content:persona+"\u4F60\u6B63\u5728\u548C\u7528\u6237\u8BA8\u8BBA\u300A"+bk.title+"\u300B\u7B2C"+ch.number+"\u7AE0\u300C"+ch.title+"\u300D\u7684\u5185\u5BB9\u3002"+ctx+"\n\n\u8BF7\u56F4\u7ED5\u7AE0\u8282\u5185\u5BB9\u8FDB\u884C\u6709\u89C1\u5730\u7684\u8BA8\u8BBA\u3002"};
+      var ctx="";
+      if(chatP!==null) {
+        if(settings.chatParaContext==="full") {
+          /* 全章模式 */
+          ctx="\n\n\u5F53\u524D\u7AE0\u8282\u5168\u6587\uFF1A\n"+ch.content+"\n\n\u5F53\u524D\u8BA8\u8BBA\u7684\u6BB5\u843D\uFF08\u7B2C"+(chatP+1)+"\u6BB5\uFF09\uFF1A\n"+allParagraphs[chatP];
+        } else {
+          /* 轻量模式：前后3段 */
+          var from=Math.max(0,chatP-3); var to=Math.min(allParagraphs.length-1,chatP+3);
+          var nearby=[]; for(var k=from;k<=to;k++) nearby.push((k===chatP?">>> ":"")+allParagraphs[k]);
+          ctx="\n\n\u9644\u8FD1\u6BB5\u843D\u4E0A\u4E0B\u6587\uFF08>>>\u6807\u8BB0\u7684\u662F\u5F53\u524D\u8BA8\u8BBA\u6BB5\uFF09\uFF1A\n"+nearby.join("\n\n");
+        }
+        if(aiStory&&aiStory[chatP]) ctx+="\n\nAI\u5BF9\u8FD9\u6BB5\u7684\u8BB2\u89E3\uFF1A\n"+aiStory[chatP];
+        if(aiAnn&&aiAnn[chatP]) ctx+="\n\nAI\u5BF9\u8FD9\u6BB5\u7684\u6279\u6CE8\uFF1A\n"+aiAnn[chatP];
+      }
+      var boundary="\n\n\u91CD\u8981\uFF1A\u4F60\u662F\u7528\u6237\u7684\u9605\u8BFB\u4F19\u4F34\uFF0C\u4EE5\u7B2C\u4E09\u65B9\u89C6\u89D2\u8BA8\u8BBA\u4E66\u4E2D\u5185\u5BB9\u3002\u7EDD\u4E0D\u4EE3\u5165\u4E66\u4E2D\u4EFB\u4F55\u89D2\u8272\u8FDB\u884C\u89D2\u8272\u626E\u6F14\uFF0C\u7EDD\u4E0D\u4EE5\u89D2\u8272\u53E3\u5434\u56DE\u590D\u3002";
+      var sysMsg={role:"system",content:persona+"\u4F60\u6B63\u5728\u548C\u7528\u6237\u8BA8\u8BBA\u300A"+bk.title+"\u300B\u7B2C"+ch.number+"\u7AE0\u300C"+ch.title+"\u300D\u7684\u5185\u5BB9\u3002"+ctx+boundary+"\n\n\u8BF7\u56F4\u7ED5\u7AE0\u8282\u5185\u5BB9\u8FDB\u884C\u6709\u89C1\u5730\u7684\u8BA8\u8BBA\u3002"};
       var apiMsgs=[sysMsg];
-      // Include recent chat history (last 10 messages)
-      var recent=newMsgs.slice(-10);
+      var keepCount=settings.chatKeepCount||20;
+      var recent=newMsgs.slice(-keepCount);
       for(var i=0;i<recent.length;i++) apiMsgs.push({role:recent[i].role==="user"?"user":"assistant",content:recent[i].text});
       var result=await callAI(settings,apiMsgs,"discussModelName");
       setMsgs(function(prev){return prev.concat([{role:"ai",text:result}]);});
@@ -261,28 +314,34 @@ function ReaderPage(p) {
     setSending(false);
   }
 
-  /* ---- 划线 ---- */
-  function handleTextSelect(paraIdx) {
-    var sel=window.getSelection();
-    if(!sel||sel.isCollapsed||!sel.toString().trim()) { setHlMenu(null); return; }
-    // Find offsets relative to the paragraph text
-    var range=sel.getRangeAt(0);
-    var paraText=allParagraphs[paraIdx];
-    var selectedText=sel.toString();
-    var startOffset=paraText.indexOf(selectedText);
-    if(startOffset===-1) { setHlMenu(null); return; }
-    var endOffset=startOffset+selectedText.length;
-    // Get position for menu
-    var rect=range.getBoundingClientRect();
-    setHlMenu({paraIdx:paraIdx, startOffset:startOffset, endOffset:endOffset, text:selectedText, top:rect.top+window.scrollY-50, left:rect.left});
-  }
+  /* ---- 划线（主动确认模式） ---- */
+  var _hlMode=useState(false); var hlMode=_hlMode[0]; var setHlMode=_hlMode[1];
+  var _hlColor=useState(settings.highlightColor||"#F4C2C2"); var hlColor=_hlColor[0]; var setHlColor=_hlColor[1];
+  var _savedSel=useState(""); var savedSel=_savedSel[0]; var setSavedSel=_savedSel[1];
+  useEffect(function(){
+    function onSC(){var s=window.getSelection();if(s&&!s.isCollapsed&&s.toString().trim()) setSavedSel(s.toString());}
+    document.addEventListener("selectionchange",onSC);
+    return function(){document.removeEventListener("selectionchange",onSC);};
+  },[]);
 
-  async function saveHighlight(color) {
-    if(!hlMenu) return;
-    var h={chapterId:ch.id, paraIndex:hlMenu.paraIdx, startOffset:hlMenu.startOffset, endOffset:hlMenu.endOffset, text:hlMenu.text, color:color};
-    var id=await addHighlight(h); h.id=id;
-    setHls(hls.concat([h]));
-    setHlMenu(null); window.getSelection().removeAllRanges();
+  function captureHighlight() {
+    var selectedText=savedSel;
+    if(!selectedText) { alert("\u8BF7\u5148\u957F\u6309\u9009\u4E2D\u8981\u5212\u7EBF\u7684\u6587\u5B57\uFF0C\u518D\u70B9\u6B64\u6309\u94AE"); return; }
+    /* 找到在哪个段落里 */
+    var foundIdx=-1; var startOffset=-1;
+    for(var pi=0;pi<allParagraphs.length;pi++) {
+      var idx=allParagraphs[pi].indexOf(selectedText);
+      if(idx!==-1) { foundIdx=pi; startOffset=idx; break; }
+    }
+    if(foundIdx===-1) { alert("\u672A\u80FD\u5B9A\u4F4D\u5230\u6BB5\u843D\uFF0C\u8BF7\u91CD\u65B0\u9009\u62E9"); return; }
+    var color=hlColor;
+    var h={chapterId:ch.id, paraIndex:foundIdx, startOffset:startOffset, endOffset:startOffset+selectedText.length, text:selectedText, color:color};
+    (async function(){
+      var id=await addHighlight(h); h.id=id;
+      setHls(hls.concat([h]));
+    })();
+    setSavedSel("");
+    try{window.getSelection().removeAllRanges();}catch(e){}
   }
 
   async function removeHighlight(id) {
@@ -318,12 +377,15 @@ function ReaderPage(p) {
   function startChat(idx) { setChatP(idx); setChatOn(true); }
 
   return (
-    <div>
+    <div style={{paddingBottom:(chatOn||hlMode)?200:0}}>
       {/* Header */}
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 0 4px"}}>
         <div onClick={p.onBack} style={{width:34,height:34,borderRadius:11,background:t.solid,border:"1px solid "+t.borderSub,display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,cursor:"pointer",color:t.sub}}>{"\u2190"}</div>
         <div style={{flex:1,textAlign:"center"}}><div style={{fontSize:11,color:t.sub}}>{bk.title}</div><div style={{fontSize:14,fontWeight:600,color:t.text}}>{"\u7B2C"+ch.number+"\u7AE0"}</div></div>
-        <div onClick={function(){setTocOn(!tocOn);}} style={{width:34,height:34,borderRadius:11,background:t.solid,border:"1px solid "+t.borderSub,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,cursor:"pointer",color:t.sub}}>{"\u2630"}</div>
+        <div style={{display:"flex",gap:6}}>
+          <div onClick={function(){setHlMode(!hlMode);}} style={{width:34,height:34,borderRadius:11,background:hlMode?t.accent:t.solid,border:"1px solid "+(hlMode?t.accent:t.borderSub),display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,cursor:"pointer",color:hlMode?"#fff":t.sub}}>{"\uD83D\uDD8D\uFE0F"}</div>
+          <div onClick={function(){setTocOn(!tocOn);}} style={{width:34,height:34,borderRadius:11,background:t.solid,border:"1px solid "+t.borderSub,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,cursor:"pointer",color:t.sub}}>{"\u2630"}</div>
+        </div>
       </div>
 
       {/* TOC */}
@@ -345,13 +407,13 @@ function ReaderPage(p) {
       {/* AI top buttons */}
       {allParagraphs.length>0&&(<div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
         {settings.aiStoryEnabled&&(
-          <div onClick={aiStoryLoading?null:loadAiStory} style={{padding:"7px 14px",borderRadius:10,cursor:"pointer",background:aiStoryLoading?"#ccc":allAiOn?t.accent+"22":t.accent,color:allAiOn?t.accent:"#fff",fontSize:12,fontWeight:600,border:allAiOn?"1px solid "+t.accent:"none",opacity:aiStoryLoading?0.7:1}}>{aiStoryLoading?"\u2B50 \u52A0\u8F7D\u4E2D...":(allAiOn&&aiStory)?"\uD83C\uDFA4 \u6536\u8D77\u8BB2\u89E3":"\uD83C\uDFA4 AI\u8BB2\u6545\u4E8B"}</div>
+          <div onClick={aiStoryLoading?null:function(){loadAiStory();}} style={{padding:"7px 14px",borderRadius:10,cursor:"pointer",background:aiStoryLoading?"#ccc":allAiOn?t.accent+"22":t.accent,color:allAiOn?t.accent:"#fff",fontSize:12,fontWeight:600,border:allAiOn?"1px solid "+t.accent:"none",opacity:aiStoryLoading?0.7:1}}>{aiStoryLoading?"\u2B50 \u52A0\u8F7D\u4E2D...":(allAiOn&&aiStory)?"\uD83C\uDFA4 \u6536\u8D77\u8BB2\u89E3":"\uD83C\uDFA4 AI\u8BB2\u6545\u4E8B"}</div>
         )}
         {settings.aiStoryEnabled&&aiStory&&(
           <div onClick={function(){loadAiStory(true);}} style={{padding:"7px 10px",borderRadius:10,cursor:"pointer",background:"transparent",color:t.accent,fontSize:11,border:"1px solid "+t.accent+"44"}}>{"\uD83D\uDD04 \u91CD\u65B0\u751F\u6210"}</div>
         )}
         {settings.aiAnnotationEnabled&&(
-          <div onClick={aiAnnLoading?null:loadAiAnnotation} style={{padding:"7px 14px",borderRadius:10,cursor:"pointer",background:aiAnnLoading?"#ccc":annOpen?t.accent2+"22":t.accent2,color:annOpen?t.accent2:"#fff",fontSize:12,fontWeight:600,border:annOpen?"1px solid "+t.accent2:"none",opacity:aiAnnLoading?0.7:1}}>{aiAnnLoading?"\u270D\uFE0F \u52A0\u8F7D\u4E2D...":(annOpen&&aiAnn)?"\uD83D\uDCDD \u6536\u8D77\u6279\u6CE8":"\uD83D\uDCDD AI\u5171\u8BFB\u6279\u6CE8"}</div>
+          <div onClick={aiAnnLoading?null:function(){loadAiAnnotation();}} style={{padding:"7px 14px",borderRadius:10,cursor:"pointer",background:aiAnnLoading?"#ccc":annOpen?t.accent2+"22":t.accent2,color:annOpen?t.accent2:"#fff",fontSize:12,fontWeight:600,border:annOpen?"1px solid "+t.accent2:"none",opacity:aiAnnLoading?0.7:1}}>{aiAnnLoading?"\u270D\uFE0F \u52A0\u8F7D\u4E2D...":(annOpen&&aiAnn)?"\uD83D\uDCDD \u6536\u8D77\u6279\u6CE8":"\uD83D\uDCDD AI\u5171\u8BFB\u6279\u6CE8"}</div>
         )}
         {settings.aiAnnotationEnabled&&aiAnn&&(
           <div onClick={function(){loadAiAnnotation(true);}} style={{padding:"7px 10px",borderRadius:10,cursor:"pointer",background:"transparent",color:t.accent2,fontSize:11,border:"1px solid "+t.accent2+"44"}}>{"\uD83D\uDD04 \u91CD\u65B0\u6279\u6CE8"}</div>
@@ -361,17 +423,19 @@ function ReaderPage(p) {
         )}
       </div>)}
 
-      {/* Highlight color picker (floating) */}
-      {hlMenu&&(<div style={{position:"absolute",top:hlMenu.top,left:Math.max(16,Math.min(hlMenu.left,window.innerWidth-200)),zIndex:99,background:"#fff",borderRadius:14,padding:"8px 12px",boxShadow:"0 4px 20px rgba(0,0,0,0.15)",display:"flex",gap:8,alignItems:"center"}}>
-        <span style={{fontSize:11,color:"#999"}}>{"\u5212\u7EBF"}</span>
-        {highlightColors.map(function(hc){return(
-          <div key={hc.color} onClick={function(){saveHighlight(hc.color);}} style={{width:26,height:26,borderRadius:13,background:hc.color,cursor:"pointer",border:"2px solid rgba(0,0,0,0.1)"}}/>
-        );})}
-        <div onClick={function(){setHlMenu(null);window.getSelection().removeAllRanges();}} style={{fontSize:11,color:"#999",cursor:"pointer",marginLeft:4}}>{"\u2715"}</div>
+      {/* 划线工具栏 — 底部悬浮 */}
+      {hlMode&&!chatOn&&(<div style={{position:"fixed",bottom:0,left:0,right:0,zIndex:90,padding:"10px 16px",paddingBottom:"max(10px, env(safe-area-inset-bottom))",background:t.bg,borderTop:"1px solid "+t.borderSub,boxShadow:"0 -2px 12px rgba(0,0,0,0.08)"}}>
+        <div style={{display:"flex",alignItems:"center",gap:6,maxWidth:600,margin:"0 auto"}}>
+          <span style={{fontSize:11,color:t.sub}}>{"\u9009\u8272"}</span>
+          {highlightColors.map(function(hc){var active=hlColor===hc.color;return(
+            <div key={hc.color} onClick={function(){setHlColor(hc.color);}} style={{width:active?26:20,height:active?26:20,borderRadius:13,background:hc.color,cursor:"pointer",border:active?"3px solid "+t.accent:"2px solid rgba(0,0,0,0.08)",transition:"all 0.15s"}}/>
+          );})}
+          <div onClick={captureHighlight} style={{marginLeft:"auto",padding:"8px 16px",borderRadius:10,background:t.accent,color:"#fff",fontSize:12,fontWeight:600,cursor:"pointer"}}>{"\u2713 \u5212\u7EBF"}</div>
+        </div>
       </div>)}
 
       {/* Pagination top */}
-      {totalPages>1&&(<div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:12,marginBottom:12}}>
+      {!isScrollMode&&totalPages>1&&(<div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:12,marginBottom:12}}>
         <div onClick={function(){if(curPage>0){setCurPage(curPage-1);window.scrollTo(0,0);}}} style={{padding:"6px 14px",borderRadius:10,cursor:curPage>0?"pointer":"default",background:curPage>0?t.solid:"transparent",color:curPage>0?t.text:"#ccc",fontSize:12,border:"1px solid "+(curPage>0?t.borderSub:"rgba(0,0,0,0.04)")}}>{"\u2190 \u4E0A\u4E00\u9875"}</div>
         <span style={{fontSize:12,color:t.sub}}>{(curPage+1)+" / "+totalPages+" \u9875"}</span>
         <div onClick={function(){if(curPage<totalPages-1){setCurPage(curPage+1);window.scrollTo(0,0);}}} style={{padding:"6px 14px",borderRadius:10,cursor:curPage<totalPages-1?"pointer":"default",background:curPage<totalPages-1?t.solid:"transparent",color:curPage<totalPages-1?t.text:"#ccc",fontSize:12,border:"1px solid "+(curPage<totalPages-1?t.borderSub:"rgba(0,0,0,0.04)")}}>{"\u4E0B\u4E00\u9875 \u2192"}</div>
@@ -390,7 +454,7 @@ function ReaderPage(p) {
 
           return (
             <div key={gi} style={{marginBottom:i<paragraphs.length-1?20:0}}>
-              <p onMouseUp={function(){handleTextSelect(gi);}} onTouchEnd={function(){setTimeout(function(){handleTextSelect(gi);},300);}} style={{fontSize:15,lineHeight:2,color:t.text,margin:0,textAlign:"justify",cursor:"text",whiteSpace:"pre-wrap"}}>
+              <p style={{fontSize:15,lineHeight:2,color:t.text,margin:0,textAlign:"justify",cursor:"text",whiteSpace:"pre-wrap",fontFamily:fp.cn}}>
                 {hlParts.map(function(part,j){
                   if(part.color) return <span key={j} onClick={function(e){e.stopPropagation();if(confirm("\u5220\u9664\u8FD9\u6761\u5212\u7EBF\uFF1F")) removeHighlight(part.id);}} style={{borderBottom:"3px solid "+part.color,paddingBottom:1,cursor:"pointer"}}>{part.text}</span>;
                   return <span key={j}>{part.text}</span>;
@@ -400,10 +464,10 @@ function ReaderPage(p) {
                 {settings.aiStoryEnabled&&hasAiStory&&(
                   <div onClick={function(){toggleAi(gi);}} style={{display:"inline-flex",alignItems:"center",gap:3,padding:"3px 9px",borderRadius:8,cursor:"pointer",background:isAiOpen?t.accent:t.accentLight,fontSize:11,color:isAiOpen?"#fff":t.accent,fontWeight:500,border:"1px solid "+t.accent+"22"}}>{isAiOpen?"\uD83D\uDCA1 \u6536\u8D77":"\uD83D\uDCA1 \u8BB2\u89E3"}</div>
                 )}
-                {settings.aiDiscussEnabled&&(
-                  <div onClick={function(){startChat(gi);}} style={{display:"inline-flex",alignItems:"center",gap:3,padding:"3px 9px",borderRadius:8,cursor:"pointer",background:t.freshLight,fontSize:11,color:t.fresh,fontWeight:500,border:"1px solid "+t.freshBorder}}>{"\u804A\u8FD9\u6BB5"}</div>
+                {settings.aiDiscussEnabled&&para.length>50&&(
+                  <div onClick={function(){startChat(gi);}} style={{width:22,height:22,borderRadius:11,display:"inline-flex",alignItems:"center",justifyContent:"center",cursor:"pointer",fontSize:10,opacity:0.3,background:"transparent"}}>{"\uD83D\uDCAC"}</div>
                 )}
-                <div onClick={function(){toggleNote(gi); if(!noteOpen[gi]&&myNote) editNote(gi,myNote.content);}} style={{display:"inline-flex",alignItems:"center",gap:3,padding:"3px 9px",borderRadius:8,cursor:"pointer",background:myNote?"#FFF0D4":"rgba(0,0,0,0.03)",fontSize:11,color:myNote?"#B8860B":"#999",fontWeight:500,border:myNote?"1px solid #FFD70044":"1px solid rgba(0,0,0,0.06)"}}>{myNote?"\uD83D\uDCCC \u6211\u7684\u7B14\u8BB0":"\u270F\uFE0F \u8BB0\u7B14\u8BB0"}</div>
+                {para.length>50&&(<div onClick={function(){toggleNote(gi); if(!noteOpen[gi]&&myNote) editNote(gi,myNote.content);}} style={{width:22,height:22,borderRadius:11,display:"inline-flex",alignItems:"center",justifyContent:"center",cursor:"pointer",fontSize:10,opacity:myNote?0.7:0.3,background:myNote?"#FFD70022":"transparent"}}>{myNote?"\uD83D\uDCCC":"\u270F\uFE0F"}</div>)}
               </div>
 
               {/* AI Story expanded */}
@@ -437,7 +501,7 @@ function ReaderPage(p) {
       </G>
 
       {/* Pagination bottom */}
-      {totalPages>1&&(<div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginBottom:12,flexWrap:"wrap"}}>
+      {!isScrollMode&&totalPages>1&&(<div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginBottom:12,flexWrap:"wrap"}}>
         <div onClick={function(){if(curPage>0){setCurPage(curPage-1);window.scrollTo(0,0);}}} style={{padding:"8px 16px",borderRadius:12,cursor:curPage>0?"pointer":"default",background:curPage>0?t.solid:"transparent",color:curPage>0?t.text:"#ccc",fontSize:13,fontWeight:500,border:"1px solid "+(curPage>0?t.borderSub:"rgba(0,0,0,0.04)")}}>{"\u2190"}</div>
         {Array.from({length:totalPages},function(_,pg){return(
           <div key={pg} onClick={function(){setCurPage(pg);window.scrollTo(0,0);}} style={{width:30,height:30,borderRadius:15,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:pg===curPage?700:400,cursor:"pointer",background:pg===curPage?t.accent:"transparent",color:pg===curPage?"#fff":t.sub}}>{pg+1}</div>
@@ -447,34 +511,59 @@ function ReaderPage(p) {
 
       {/* Feelings */}
       <G s={{padding:16,marginBottom:12}}>
-        <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:10}}><span style={{fontSize:14}}>{"\uD83D\uDCDD"}</span><span style={{fontSize:13,fontWeight:600,color:t.text}}>{"\u7AE0\u672B\u611F\u60F3"}</span></div>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+          <div style={{display:"flex",alignItems:"center",gap:6}}><span style={{fontSize:14}}>{"\uD83D\uDCDD"}</span><span style={{fontSize:13,fontWeight:600,color:t.text}}>{"\u7AE0\u672B\u611F\u60F3"}</span></div>
+          <div onClick={async function(){
+            if(sending) return; setSending(true); setErr("");
+            try {
+              var sysContent=persona+"\u4F60\u662F\u7528\u6237\u7684\u9605\u8BFB\u4F19\u4F34\uFF0C\u521A\u8BFB\u5B8C\u300A"+bk.title+"\u300B\u7B2C"+ch.number+"\u7AE0\u300C"+ch.title+"\u300D\u3002\u8BF7\u5206\u4EAB\u4F60\u7684\u8BFB\u540E\u611F\u60F3\uFF0C\u50CF\u548C\u670B\u53CB\u804A\u5929\u4E00\u6837\u81EA\u7136\u3002\u7EDD\u4E0D\u4EE3\u5165\u89D2\u8272\u626E\u6F14\u3002";
+              var result=await callAI(settings,[{role:"system",content:sysContent},{role:"user",content:"\u5206\u4EAB\u4E00\u4E0B\u4F60\u8BFB\u5B8C\u8FD9\u7AE0\u7684\u611F\u60F3\u5427\uFF5E\n\n"+ch.content.substring(0,2000)}],"discussModelName");
+              var d={chapterId:ch.id, author:"ai", content:"\u3010\u611F\u60F3\u3011"+result, createdAt:Date.now()};
+              var id=await addDiscussion(d); d.id=id;
+              setMsgs(function(prev){return prev.concat([{role:"ai",text:d.content,id:id}]);});
+            } catch(e) { setErr(e.message); }
+            setSending(false);
+          }} style={{padding:"5px 12px",borderRadius:8,cursor:sending?"default":"pointer",fontSize:11,color:t.accent,border:"1px solid "+t.accent+"44",opacity:sending?0.5:1}}>{sending?"\u2026":"\uD83E\uDD16 AI\u5148\u8BF4"}</div>
+        </div>
+        {/* 历史感想列表 */}
+        {msgs.filter(function(m){return m.text&&m.text.indexOf("\u3010\u611F\u60F3\u3011")===0;}).map(function(m,i){
+          var isU=m.role==="user";
+          return (<div key={"f"+i} style={{marginBottom:8,display:"flex",gap:8,alignItems:"flex-start"}}>
+            <div style={{flex:1,padding:"8px 12px",borderRadius:12,background:isU?bp.user:bp.ai,color:isU?bp.userText:bp.aiText,fontSize:13,lineHeight:1.7}}>{m.text.replace("\u3010\u611F\u60F3\u3011","")}</div>
+            {m.id&&<div onClick={async function(){await deleteDiscussion(m.id);setMsgs(function(prev){return prev.filter(function(x){return x.id!==m.id;});});}} style={{fontSize:11,color:"#C33",cursor:"pointer",padding:"8px 2px",flexShrink:0}}>{"\u2715"}</div>}
+          </div>);
+        })}
         <div style={{display:"flex",gap:8}}>
           <input value={feel} onChange={function(e){setFeel(e.target.value);}} placeholder={"\u5199\u4E0B\u4F60\u7684\u8BFB\u540E\u611F..."} style={{flex:1,padding:"10px 14px",borderRadius:12,background:"rgba(0,0,0,0.02)",border:"1px solid rgba(0,0,0,0.06)",fontSize:13,color:t.text,outline:"none",fontFamily:"inherit"}}/>
-          <div onClick={async function(){if(!feel.trim()) return; await addDiscussion({chapterId:ch.id,author:"user",content:"\u3010\u611F\u60F3\u3011"+feel,createdAt:Date.now()}); setFeel("");}} style={{padding:"10px 14px",borderRadius:12,background:t.accent,color:"#fff",fontSize:13,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center"}}>{"\u4FDD\u5B58"}</div>
+          <div onClick={async function(){if(!feel.trim()) return; var d={chapterId:ch.id,author:"user",content:"\u3010\u611F\u60F3\u3011"+feel,createdAt:Date.now()}; var id=await addDiscussion(d); d.id=id; setMsgs(function(prev){return prev.concat([{role:"user",text:d.content,id:id}]);}); setFeel("");}} style={{padding:"10px 14px",borderRadius:12,background:t.accent,color:"#fff",fontSize:13,fontWeight:600,cursor:"pointer",display:"flex",alignItems:"center"}}>{"\u4FDD\u5B58"}</div>
         </div>
       </G>
 
-      {/* Chat panel */}
-      {chatOn&&(<G s={{padding:16,marginBottom:12}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-          <span style={{fontSize:13,fontWeight:600,color:t.text}}>{chatP!==null?"\uD83D\uDCAC \u804A\u7B2C"+(chatP+1)+"\u6BB5":"\uD83D\uDCAC \u8BA8\u8BBA\u00B7\u7B2C"+ch.number+"\u7AE0"}</span>
-          <span onClick={function(){setChatOn(false);setChatP(null);}} style={{fontSize:12,color:t.sub,cursor:"pointer"}}>{"\u6536\u8D77 \u25B2"}</span>
+      {/* Chat panel — 固定底部浮层 */}
+      {chatOn&&(<div style={{position:"fixed",bottom:0,left:0,right:0,zIndex:100,background:t.bg,borderTop:"1px solid "+t.borderSub,boxShadow:"0 -4px 24px rgba(0,0,0,0.1)",padding:"12px 16px",paddingBottom:"max(12px, env(safe-area-inset-bottom))"}}>
+        <div style={{maxWidth:600,margin:"0 auto"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+            <span style={{fontSize:13,fontWeight:600,color:t.text}}>{chatP!==null?"\uD83D\uDCAC \u804A\u7B2C"+(chatP+1)+"\u6BB5":"\uD83D\uDCAC \u8BA8\u8BBA\u00B7\u7B2C"+ch.number+"\u7AE0"}</span>
+            <span onClick={function(){setChatOn(false);setChatP(null);}} style={{fontSize:20,color:t.sub,cursor:"pointer",padding:"2px 8px"}}>{"\u2715"}</span>
+          </div>
+          {chatP!==null&&allParagraphs[chatP]&&(<div style={{fontSize:11,color:t.sub,padding:"6px 10px",borderRadius:8,background:"rgba(0,0,0,0.02)",marginBottom:8,lineHeight:1.5,maxHeight:40,overflow:"hidden"}}>{"\u6B63\u5728\u8BA8\u8BBA\uFF1A"+allParagraphs[chatP].substring(0,80)+"..."}</div>)}
+          <div style={{maxHeight:220,overflowY:"auto",marginBottom:8}}>
+            {msgs.length===0&&<div style={{fontSize:12,color:"#ccc",textAlign:"center",padding:"12px 0"}}>{"\u8BF4\u70B9\u4EC0\u4E48\u5F00\u59CB\u804A\uFF5E"}</div>}
+            {msgs.filter(function(m){return !m.text||m.text.indexOf("\u3010\u611F\u60F3\u3011")!==0;}).map(function(m,i){var isU=m.role==="user";return(
+              <div key={i} style={{display:"flex",justifyContent:isU?"flex-end":"flex-start",marginBottom:8,gap:4,alignItems:"flex-start"}}>
+                {isU&&m.id&&<div onClick={async function(){if(!confirm("\u5220\u9664\u8FD9\u6761\uFF1F")) return;await deleteDiscussion(m.id);setMsgs(function(prev){return prev.filter(function(x){return x.id!==m.id;});});}} style={{fontSize:10,color:"#C33",cursor:"pointer",padding:"10px 2px",flexShrink:0}}>{"\u2715"}</div>}
+                <div style={{background:isU?bp.user:bp.ai,color:isU?bp.userText:bp.aiText,borderRadius:isU?"14px 14px 4px 14px":"14px 14px 14px 4px",padding:"9px 13px",maxWidth:"75%",fontSize:13,lineHeight:1.7,whiteSpace:"pre-wrap"}}>{m.text}</div>
+                {!isU&&m.id&&<div onClick={async function(){if(!confirm("\u5220\u9664\u8FD9\u6761\uFF1F")) return;await deleteDiscussion(m.id);setMsgs(function(prev){return prev.filter(function(x){return x.id!==m.id;});});}} style={{fontSize:10,color:"#C33",cursor:"pointer",padding:"10px 2px",flexShrink:0}}>{"\u2715"}</div>}
+              </div>);
+            })}
+            {sending&&<div style={{display:"flex",marginBottom:8}}><div style={{background:bp.ai,color:bp.aiText,borderRadius:"14px 14px 14px 4px",padding:"9px 13px",fontSize:13}}>{"..."}</div></div>}
+          </div>
+          <div style={{display:"flex",gap:8}}>
+            <input value={inp} onChange={function(e){setInp(e.target.value);}} onKeyDown={function(e){if(e.key==="Enter") send();}} placeholder={"\u8BF4\u70B9\u4EC0\u4E48..."} style={{flex:1,padding:"10px 14px",borderRadius:12,background:"rgba(0,0,0,0.03)",border:"1px solid rgba(0,0,0,0.08)",fontSize:13,color:t.text,outline:"none",fontFamily:"inherit"}} disabled={sending}/>
+            <div onClick={send} style={{padding:"10px 14px",borderRadius:12,background:sending?"#ccc":t.accent,color:"#fff",fontSize:13,fontWeight:600,cursor:sending?"default":"pointer",display:"flex",alignItems:"center"}}>{sending?"\u2026":"\u53D1\u9001"}</div>
+          </div>
         </div>
-        {chatP!==null&&allParagraphs[chatP]&&(<div style={{fontSize:11,color:t.sub,padding:"6px 10px",borderRadius:8,background:"rgba(0,0,0,0.02)",marginBottom:10,lineHeight:1.5}}>{"\u6B63\u5728\u8BA8\u8BBA\uFF1A"+allParagraphs[chatP].substring(0,60)+"..."}</div>)}
-        {msgs.length===0&&<div style={{fontSize:12,color:"#ccc",textAlign:"center",padding:"16px 0"}}>{"\u8FD8\u6CA1\u6709\u8BA8\u8BBA\uFF0C\u8BF4\u70B9\u4EC0\u4E48\u5427\uFF5E"}</div>}
-        <div style={{maxHeight:300,overflowY:"auto",marginBottom:8}}>
-          {msgs.map(function(m,i){var isU=m.role==="user";return(
-            <div key={i} style={{display:"flex",justifyContent:isU?"flex-end":"flex-start",marginBottom:8}}>
-              <div style={{background:isU?bp.user:bp.ai,color:isU?bp.userText:bp.aiText,borderRadius:isU?"14px 14px 4px 14px":"14px 14px 14px 4px",padding:"9px 13px",maxWidth:"80%",fontSize:13,lineHeight:1.7,whiteSpace:"pre-wrap"}}>{m.text}</div>
-            </div>);
-          })}
-          {sending&&<div style={{display:"flex",marginBottom:8}}><div style={{background:bp.ai,color:bp.aiText,borderRadius:"14px 14px 14px 4px",padding:"9px 13px",fontSize:13}}>{"..."}</div></div>}
-        </div>
-        <div style={{display:"flex",gap:8}}>
-          <input value={inp} onChange={function(e){setInp(e.target.value);}} onKeyDown={function(e){if(e.key==="Enter") send();}} placeholder={"\u8BF4\u70B9\u4EC0\u4E48..."} style={{flex:1,padding:"10px 14px",borderRadius:12,background:"rgba(0,0,0,0.02)",border:"1px solid rgba(0,0,0,0.06)",fontSize:13,color:t.text,outline:"none",fontFamily:"inherit"}} disabled={sending}/>
-          <div onClick={send} style={{padding:"10px 14px",borderRadius:12,background:sending?"#ccc":t.accent,color:"#fff",fontSize:13,fontWeight:600,cursor:sending?"default":"pointer",display:"flex",alignItems:"center"}}>{sending?"\u2026":"\u53D1\u9001"}</div>
-        </div>
-      </G>)}
+      </div>)}
 
       {/* Navigation */}
       <div style={{display:"flex",gap:8,marginBottom:12}}>
@@ -549,13 +638,32 @@ function SettingsPage(p) {
       {/* Reading settings */}
       <G s={{padding:16,marginBottom:12}}>
         <div style={{fontSize:13,fontWeight:600,color:t.text,marginBottom:8}}>{"\uD83D\uDCD6 \u9605\u8BFB\u8BBE\u7F6E"}</div>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-          <div style={{fontSize:12,color:t.text}}>{"\u6BCF\u9875\u6BB5\u843D\u6570"}</div>
-          <div style={{display:"flex",alignItems:"center",gap:8}}>
-            <div onClick={function(){var v=Math.max(3,(s.parasPerPage||8)-1);setVal("parasPerPage",v);}} style={{width:28,height:28,borderRadius:14,background:t.solid,border:"1px solid "+t.borderSub,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,cursor:"pointer",color:t.text}}>{"-"}</div>
-            <span style={{fontSize:14,fontWeight:600,color:t.accent,minWidth:20,textAlign:"center"}}>{s.parasPerPage||8}</span>
-            <div onClick={function(){var v=Math.min(30,(s.parasPerPage||8)+1);setVal("parasPerPage",v);}} style={{width:28,height:28,borderRadius:14,background:t.solid,border:"1px solid "+t.borderSub,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,cursor:"pointer",color:t.text}}>{"+"}</div>
+        {/* 滚动/分页 */}
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+          <div style={{fontSize:12,color:t.text}}>{"\u9605\u8BFB\u6A21\u5F0F"}</div>
+          <div style={{display:"flex",gap:4}}>
+            <div onClick={function(){setVal("scrollMode",false);}} style={{padding:"5px 12px",borderRadius:8,cursor:"pointer",fontSize:12,fontWeight:!s.scrollMode?600:400,background:!s.scrollMode?t.accent:"transparent",color:!s.scrollMode?"#fff":t.sub,border:"1px solid "+(s.scrollMode?"rgba(0,0,0,0.06)":t.accent)}}>{"\u5206\u9875"}</div>
+            <div onClick={function(){setVal("scrollMode",true);}} style={{padding:"5px 12px",borderRadius:8,cursor:"pointer",fontSize:12,fontWeight:s.scrollMode?600:400,background:s.scrollMode?t.accent:"transparent",color:s.scrollMode?"#fff":t.sub,border:"1px solid "+(!s.scrollMode?"rgba(0,0,0,0.06)":t.accent)}}>{"\u6EDA\u52A8"}</div>
           </div>
+        </div>
+        {/* 每页段落数（仅分页模式） */}
+        {!s.scrollMode&&(<div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+          <div style={{fontSize:12,color:t.text}}>{"\u6BCF\u9875\u5B57\u6570"}</div>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <div onClick={function(){var v=Math.max(1000,(s.charsPerPage||3000)-500);setVal("charsPerPage",v);}} style={{width:28,height:28,borderRadius:14,background:t.solid,border:"1px solid "+t.borderSub,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,cursor:"pointer",color:t.text}}>{"-"}</div>
+            <span style={{fontSize:14,fontWeight:600,color:t.accent,minWidth:36,textAlign:"center"}}>{s.charsPerPage||3000}</span>
+            <div onClick={function(){var v=Math.min(8000,(s.charsPerPage||3000)+500);setVal("charsPerPage",v);}} style={{width:28,height:28,borderRadius:14,background:t.solid,border:"1px solid "+t.borderSub,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,cursor:"pointer",color:t.text}}>{"+"}</div>
+          </div>
+        </div>)}
+        {/* 字体 */}
+        <div style={{fontSize:12,color:t.text,marginBottom:6}}>{"\u5B57\u4F53"}</div>
+        <div style={{display:"flex",gap:6}}>
+          {fontPresets.map(function(f,i){var active=i===(s.fontIndex||0); return(
+            <div key={i} onClick={function(){setVal("fontIndex",i);}} style={{flex:1,padding:"8px 4px",borderRadius:10,cursor:"pointer",textAlign:"center",border:active?"2px solid "+t.accent:"1px solid rgba(0,0,0,0.06)",background:active?t.accentLight:"transparent"}}>
+              <div style={{fontSize:13,fontWeight:active?600:400,color:active?t.accent:t.text,fontFamily:f.cn}}>{f.name}</div>
+              <div style={{fontSize:10,color:t.sub,fontFamily:f.cn,marginTop:2}}>{"\u9884\u89C8\u6587\u5B57"}</div>
+            </div>);
+          })}
         </div>
       </G>
 
@@ -585,8 +693,8 @@ function SettingsPage(p) {
           })}
         </div>
         <div style={{marginTop:12}}>
-          <div style={{display:"flex",justifyContent:"flex-end",marginBottom:6}}><div style={{background:bubblePresets[s.bubbleIndex||1].user,color:bubblePresets[s.bubbleIndex||1].userText,borderRadius:"12px 12px 4px 12px",padding:"8px 12px",fontSize:12}}>{"\u9884\u89C8\u6D88\u606F\uFF5E"}</div></div>
-          <div style={{display:"flex"}}><div style={{background:bubblePresets[s.bubbleIndex||1].ai,color:bubblePresets[s.bubbleIndex||1].aiText,borderRadius:"12px 12px 12px 4px",padding:"8px 12px",fontSize:12}}>{"AI\u56DE\u590D \uD83D\uDE0A"}</div></div>
+          <div style={{display:"flex",justifyContent:"flex-end",marginBottom:6}}><div style={{background:bubblePresets[s.bubbleIndex!=null?s.bubbleIndex:1].user,color:bubblePresets[s.bubbleIndex!=null?s.bubbleIndex:1].userText,borderRadius:"12px 12px 4px 12px",padding:"8px 12px",fontSize:12}}>{"\u9884\u89C8\u6D88\u606F\uFF5E"}</div></div>
+          <div style={{display:"flex"}}><div style={{background:bubblePresets[s.bubbleIndex!=null?s.bubbleIndex:1].ai,color:bubblePresets[s.bubbleIndex!=null?s.bubbleIndex:1].aiText,borderRadius:"12px 12px 12px 4px",padding:"8px 12px",fontSize:12}}>{"AI\u56DE\u590D \uD83D\uDE0A"}</div></div>
         </div>
       </G>
 
@@ -596,6 +704,46 @@ function SettingsPage(p) {
         <ToggleRow k="aiStoryEnabled" label={"\uD83C\uDFA4 AI\u8BB2\u6545\u4E8B"} desc={"\u7528\u5927\u767D\u8BDD\u8BB2\u89E3\u6BCF\u6BB5\u5185\u5BB9"}/>
         <ToggleRow k="aiAnnotationEnabled" label={"\uD83D\uDCDD AI\u5171\u8BFB\u6279\u6CE8"} desc={"AI\u81EA\u7531\u9009\u62E9\u6BB5\u843D\u7559\u8A00"}/>
         <ToggleRow k="aiDiscussEnabled" label={"\uD83D\uDCAC \u9009\u6BB5\u8BA8\u8BBA"} desc={"\u9488\u5BF9\u67D0\u6BB5\u548CAI\u5B9E\u65F6\u804A\u5929"} last/>
+      </G>
+
+      {/* 记忆与上下文 */}
+      <G s={{padding:16,marginBottom:12}}>
+        <div style={{fontSize:13,fontWeight:600,color:t.text,marginBottom:8}}>{"\uD83E\uDDE0 \u8BB0\u5FC6\u4E0E\u4E0A\u4E0B\u6587"}</div>
+        <div style={{fontSize:12,color:t.text,marginBottom:4}}>{"\u68B3\u6982\u6A21\u5F0F"}</div>
+        <div style={{display:"flex",gap:4,marginBottom:12}}>
+          {[["off","\u5173"],["brief","\u6781\u7B80"],["detail","\u8BE6\u7EC6"]].map(function(opt){return(
+            <div key={opt[0]} onClick={function(){setVal("summaryMode",opt[0]);}} style={{flex:1,textAlign:"center",padding:"6px 0",borderRadius:8,fontSize:12,cursor:"pointer",fontWeight:s.summaryMode===opt[0]?600:400,background:s.summaryMode===opt[0]?t.accent:"transparent",color:s.summaryMode===opt[0]?"#fff":t.sub,border:"1px solid "+(s.summaryMode===opt[0]?t.accent:"rgba(0,0,0,0.06)")}}>{opt[1]}</div>
+          );})}
+        </div>
+        <div style={{fontSize:12,color:t.text,marginBottom:4}}>{"\u7AE0\u672B\u8BA8\u8BBA\u6CE8\u5165"}</div>
+        <div style={{display:"flex",gap:4,marginBottom:12}}>
+          {[["summary","\u53EA\u68B3\u6982"],["summary+feelings","\u68B3\u6982+\u611F\u60F3"],["summary+feelings+ann","\u68B3\u6982+\u611F\u60F3+\u6279\u6CE8"]].map(function(opt){return(
+            <div key={opt[0]} onClick={function(){setVal("chapterContextMode",opt[0]);}} style={{flex:1,textAlign:"center",padding:"6px 0",borderRadius:8,fontSize:11,cursor:"pointer",fontWeight:s.chapterContextMode===opt[0]?600:400,background:s.chapterContextMode===opt[0]?t.accent:"transparent",color:s.chapterContextMode===opt[0]?"#fff":t.sub,border:"1px solid "+(s.chapterContextMode===opt[0]?t.accent:"rgba(0,0,0,0.06)")}}>{opt[1]}</div>
+          );})}
+        </div>
+        <div style={{fontSize:12,color:t.text,marginBottom:4}}>{"\u804A\u8FD9\u6BB5\u4E0A\u4E0B\u6587"}</div>
+        <div style={{display:"flex",gap:4,marginBottom:12}}>
+          {[["nearby","\u8F7B\u91CF\uFF08\u524D\u540E3\u6BB5\uFF09"],["full","\u5168\u7AE0+\u6781\u7B80\u68B3\u6982"]].map(function(opt){return(
+            <div key={opt[0]} onClick={function(){setVal("chatParaContext",opt[0]);}} style={{flex:1,textAlign:"center",padding:"6px 0",borderRadius:8,fontSize:11,cursor:"pointer",fontWeight:s.chatParaContext===opt[0]?600:400,background:s.chatParaContext===opt[0]?t.accent:"transparent",color:s.chatParaContext===opt[0]?"#fff":t.sub,border:"1px solid "+(s.chatParaContext===opt[0]?t.accent:"rgba(0,0,0,0.06)")}}>{opt[1]}</div>
+          );})}
+        </div>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+          <div style={{fontSize:12,color:t.text}}>{"\u5BF9\u8BDD\u4FDD\u7559\u6761\u6570"}</div>
+          <div style={{display:"flex",alignItems:"center",gap:6}}>
+            <div onClick={function(){setVal("chatKeepCount",Math.max(5,(s.chatKeepCount||20)-5));}} style={{width:24,height:24,borderRadius:12,background:t.solid,border:"1px solid "+t.borderSub,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,cursor:"pointer",color:t.text}}>{"-"}</div>
+            <span style={{fontSize:13,fontWeight:600,color:t.accent,minWidth:24,textAlign:"center"}}>{s.chatKeepCount||20}</span>
+            <div onClick={function(){setVal("chatKeepCount",Math.min(50,(s.chatKeepCount||20)+5));}} style={{width:24,height:24,borderRadius:12,background:t.solid,border:"1px solid "+t.borderSub,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,cursor:"pointer",color:t.text}}>{"+"}</div>
+          </div>
+        </div>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+          <div style={{fontSize:12,color:t.text}}>{"AI\u8F93\u51FA\u4E0A\u9650"}</div>
+          <div style={{display:"flex",alignItems:"center",gap:6}}>
+            <div onClick={function(){setVal("maxOutputTokens",Math.max(500,(s.maxOutputTokens||2000)-500));}} style={{width:24,height:24,borderRadius:12,background:t.solid,border:"1px solid "+t.borderSub,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,cursor:"pointer",color:t.text}}>{"-"}</div>
+            <span style={{fontSize:13,fontWeight:600,color:t.accent,minWidth:36,textAlign:"center"}}>{s.maxOutputTokens||2000}</span>
+            <div onClick={function(){setVal("maxOutputTokens",Math.min(8000,(s.maxOutputTokens||2000)+500));}} style={{width:24,height:24,borderRadius:12,background:t.solid,border:"1px solid "+t.borderSub,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,cursor:"pointer",color:t.text}}>{"+"}</div>
+          </div>
+        </div>
+        <div style={{fontSize:10,color:t.sub,lineHeight:1.4}}>{"\u524D\u60C5\u9884\u7B97\u3001\u8F93\u5165\u9884\u8B66\u7B49\u9AD8\u7EA7\u8BBE\u7F6E\u5F85\u4E0B\u4E00\u7248"}</div>
       </G>
 
       {/* Prompt Templates */}
@@ -709,12 +857,12 @@ export default function App() {
 
   function navChapter(cId) { setChId(cId); window.scrollTo(0,0); }
 
-  if(loading) return (<div style={{minHeight:"100vh",background:t.bg,display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{fontSize:24}}>{"\uD83D\uDCDA"}</div></div>);
+  if(loading) return (<div style={{minHeight:"100vh",background:t.bg,display:"flex",alignItems:"center",justifyContent:"center",color:t.text}}><div style={{fontSize:24}}>{"\uD83D\uDCDA"}</div></div>);
 
   return (
-    <div style={{minHeight:"100vh",background:t.bg,padding:"6px 16px 48px",fontFamily:"'SF Pro Text','PingFang SC',-apple-system,'Noto Sans SC',sans-serif",transition:"background 0.4s",maxWidth:480,margin:"0 auto"}}>
+    <div style={{minHeight:"100vh",background:t.bg,padding:"6px 16px 48px",fontFamily:"'SF Pro Text','PingFang SC',-apple-system,'Noto Sans SC',sans-serif",transition:"background 0.4s",maxWidth:480,margin:"0 auto","--card-bg":t.surface,"--card-border":"1px solid "+t.border,"--card-shadow":t.id==="night"?"0 2px 16px rgba(0,0,0,0.3)":"0 2px 16px rgba(0,0,0,0.04)"}}>
       {page==="shelf"&&<ShelfPage t={t} books={books} settings={settings} onOpen={openBook} onDelete={handleDelete} onUpload={handleUpload} onSettings={function(){go("settings");}}/>}
-      {page==="chapters"&&curBook&&<ChaptersPage t={t} book={curBook} chapters={chapters} onBack={function(){go("shelf");}} onOpenChapter={openChapter}/>}
+      {page==="chapters"&&curBook&&<ChaptersPage t={t} book={curBook} chapters={chapters} onBack={function(){go("shelf");}} onOpenChapter={openChapter} onUpdateChapter={async function(ch){await updateChapter(ch);setChapters(chapters.map(function(c){return c.id===ch.id?ch:c;}));}}/>}
       {page==="reader"&&curBook&&curCh&&<ReaderPage t={t} book={curBook} chapter={curCh} allChapters={chapters} settings={settings} onBack={function(){go("chapters");}} onMarkRead={markRead} onNav={navChapter}/>}
       {page==="settings"&&<SettingsPage t={t} settings={settings} onUpdate={function(ns){setSettings(ns);}} onBack={function(){go("shelf");}}/>}
     </div>
