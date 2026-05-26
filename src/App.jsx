@@ -318,8 +318,19 @@ function ReaderPage(p) {
   var _hlMode=useState(false); var hlMode=_hlMode[0]; var setHlMode=_hlMode[1];
   var _hlColor=useState(settings.highlightColor||"#F4C2C2"); var hlColor=_hlColor[0]; var setHlColor=_hlColor[1];
   var _savedSel=useState(""); var savedSel=_savedSel[0]; var setSavedSel=_savedSel[1];
+  var _savedPi=useState(-1); var savedPi=_savedPi[0]; var setSavedPi=_savedPi[1];
   useEffect(function(){
-    function onSC(){var s=window.getSelection();if(s&&!s.isCollapsed&&s.toString().trim()) setSavedSel(s.toString());}
+    function onSC(){
+      var s=window.getSelection();
+      if(s&&!s.isCollapsed&&s.toString().trim()){
+        setSavedSel(s.toString());
+        var node=s.anchorNode;
+        while(node&&node!==document.body){
+          if(node.dataset&&node.dataset.pi!==undefined){setSavedPi(parseInt(node.dataset.pi));break;}
+          node=node.parentNode;
+        }
+      }
+    }
     document.addEventListener("selectionchange",onSC);
     return function(){document.removeEventListener("selectionchange",onSC);};
   },[]);
@@ -327,13 +338,10 @@ function ReaderPage(p) {
   function captureHighlight() {
     var selectedText=savedSel;
     if(!selectedText) { alert("\u8BF7\u5148\u957F\u6309\u9009\u4E2D\u8981\u5212\u7EBF\u7684\u6587\u5B57\uFF0C\u518D\u70B9\u6B64\u6309\u94AE"); return; }
-    /* 找到在哪个段落里 */
-    var foundIdx=-1; var startOffset=-1;
-    for(var pi=0;pi<allParagraphs.length;pi++) {
-      var idx=allParagraphs[pi].indexOf(selectedText);
-      if(idx!==-1) { foundIdx=pi; startOffset=idx; break; }
-    }
-    if(foundIdx===-1) { alert("\u672A\u80FD\u5B9A\u4F4D\u5230\u6BB5\u843D\uFF0C\u8BF7\u91CD\u65B0\u9009\u62E9"); return; }
+    var foundIdx=savedPi>=0?savedPi:-1; var startOffset=-1;
+    if(foundIdx>=0&&allParagraphs[foundIdx]) startOffset=allParagraphs[foundIdx].indexOf(selectedText);
+    if(startOffset===-1){ for(var pi=0;pi<allParagraphs.length;pi++){ var idx=allParagraphs[pi].indexOf(selectedText); if(idx!==-1){foundIdx=pi;startOffset=idx;break;} } }
+    if(foundIdx===-1||startOffset===-1) { alert("\u672A\u80FD\u5B9A\u4F4D\u5230\u6BB5\u843D\uFF0C\u8BF7\u91CD\u65B0\u9009\u62E9"); return; }
     var color=hlColor;
     var h={chapterId:ch.id, paraIndex:foundIdx, startOffset:startOffset, endOffset:startOffset+selectedText.length, text:selectedText, color:color};
     (async function(){
@@ -454,7 +462,7 @@ function ReaderPage(p) {
 
           return (
             <div key={gi} style={{marginBottom:i<paragraphs.length-1?20:0}}>
-              <p style={{fontSize:15,lineHeight:2,color:t.text,margin:0,textAlign:"justify",cursor:"text",whiteSpace:"pre-wrap",fontFamily:fp.cn}}>
+              <p data-pi={gi} style={{fontSize:15,lineHeight:2,color:t.text,margin:0,textAlign:"justify",cursor:"text",whiteSpace:"pre-wrap",fontFamily:fp.cn}}>
                 {hlParts.map(function(part,j){
                   if(part.color) return <span key={j} onClick={function(e){e.stopPropagation();if(confirm("\u5220\u9664\u8FD9\u6761\u5212\u7EBF\uFF1F")) removeHighlight(part.id);}} style={{borderBottom:"3px solid "+part.color,paddingBottom:1,cursor:"pointer"}}>{part.text}</span>;
                   return <span key={j}>{part.text}</span>;
