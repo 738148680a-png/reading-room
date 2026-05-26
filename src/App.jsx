@@ -238,13 +238,18 @@ function ReaderPage(p) {
     setAiStoryLoading(true); setErr("");
     try {
       var prompt=settings.promptTemplates[settings.activePromptIndex||0].prompt;
-      var numbered=allParagraphs.map(function(p,i){return "\u3010\u7B2C"+(i+1)+"\u6BB5\u3011\n"+p;}).join("\n\n");
-      var sysMsg={role:"system",content:persona+prompt+"\n\n\u7528\u6237\u5C06\u7ED9\u4F60\u4E00\u7AE0\u5185\u5BB9\uFF08\u5206\u6BB5\u6807\u6CE8\uFF09\uFF0C\u8BF7\u9010\u6BB5\u7528\u5927\u767D\u8BDD\u8BB2\u89E3\u3002\u56DE\u590D\u683C\u5F0F\uFF1A\u6BCF\u6BB5\u8BB2\u89E3\u7528\u3010\u7B2CX\u6BB5\u3011\u5F00\u5934\uFF0C\u8BB2\u89E3\u5185\u5BB9\u7D27\u8DDF\u5176\u540E\u3002\u4E0D\u8981\u9057\u6F0F\u4EFB\u4F55\u6BB5\u843D\u3002"};
-      var userMsg={role:"user",content:"\u4E66\u540D\uFF1A"+bk.title+"\n\u7AE0\u8282\uFF1A\u7B2C"+ch.number+"\u7AE0 "+ch.title+"\n\n"+numbered};
-      var result=await callAI(settings,[sysMsg,userMsg],"storyModelName");
-      var data={}; var parts=result.split(/\u3010\u7B2C(\d+)\u6BB5\u3011/);
-      for(var i=1;i<parts.length;i+=2) { var idx=parseInt(parts[i])-1; if(parts[i+1]) data[idx]=parts[i+1].trim(); }
-      if(Object.keys(data).length===0) data[0]=result;
+      var batchSize=5;
+      var data={};
+      for(var b=0;b<allParagraphs.length;b+=batchSize){
+        var batch=allParagraphs.slice(b,b+batchSize);
+        var numbered=batch.map(function(p,i){return "\u3010\u7B2C"+(b+i+1)+"\u6BB5\u3011\n"+p;}).join("\n\n");
+        var sysMsg={role:"system",content:persona+prompt+"\n\n\u7528\u6237\u5C06\u7ED9\u4F60\u51E0\u6BB5\u5185\u5BB9\uFF08\u5206\u6BB5\u6807\u6CE8\uFF09\uFF0C\u8BF7\u9010\u6BB5\u7528\u5927\u767D\u8BDD\u8BB2\u89E3\u3002\u56DE\u590D\u683C\u5F0F\uFF1A\u6BCF\u6BB5\u8BB2\u89E3\u7528\u3010\u7B2CX\u6BB5\u3011\u5F00\u5934\uFF0C\u8BB2\u89E3\u5185\u5BB9\u7D27\u8DDF\u5176\u540E\u3002\u4E0D\u8981\u9057\u6F0F\u4EFB\u4F55\u6BB5\u843D\u3002\u6BCF\u6BB5\u8BB2\u89E32-3\u53E5\u5373\u53EF\u3002"};
+        var userMsg={role:"user",content:"\u4E66\u540D\uFF1A"+bk.title+"\n\u7AE0\u8282\uFF1A\u7B2C"+ch.number+"\u7AE0 "+ch.title+"\n\n"+numbered};
+        var result=await callAI(settings,[sysMsg,userMsg],"storyModelName");
+        var parts=result.split(/\u3010\u7B2C(\d+)\u6BB5\u3011/);
+        for(var i=1;i<parts.length;i+=2){var idx=parseInt(parts[i])-1;if(parts[i+1]) data[idx]=parts[i+1].trim();}
+      }
+      if(Object.keys(data).length===0) data[0]="AI\u672A\u80FD\u751F\u6210\u8BB2\u89E3\uFF0C\u8BF7\u91CD\u8BD5";
       setAiStory(data);
       await setAiCache({id:"story-"+ch.id, chapterId:ch.id, type:"story", data:data});
       var n={}; allParagraphs.forEach(function(_,i){if(data[i]) n[i]=true;}); setAO(n); setAllAiOn(true);
